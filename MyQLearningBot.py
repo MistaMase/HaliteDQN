@@ -8,17 +8,17 @@ import requests
 import hlt
 import dqn.bot
 
-
+# Halite Broker
 class Broker:
     def __init__(self, base_url: str):
         self.base_url = base_url
 
     def send_state(self, state):
-        response = requests.post(f'{self.base_url}/halite-to-gym', data=pickle.dumps(state), timeout=2)
+        response = requests.post(f'{self.base_url}/halite-to-gym', data=pickle.dumps(state), timeout=10)
         assert response.status_code == requests.codes.ok
 
     def receive_action(self):
-        response = requests.get(f'{self.base_url}/gym-to-halite', timeout=2)
+        response = requests.get(f'{self.base_url}/gym-to-halite', timeout=10)
         assert response.status_code == requests.codes.ok
         return pickle.loads(response.content)
 

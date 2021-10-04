@@ -17,7 +17,7 @@ import dqn.broker
 
 broker_process = None  # keep global to avoid pickling issues
 
-
+# Gym Broker
 class Broker:
     def __init__(self, base_url: str):
         self.base_url = base_url
@@ -30,16 +30,16 @@ class Broker:
         return response.content.decode()
 
     def send_action(self, action):
-        response = self.session.post(f'{self.base_url}/gym-to-halite', data=pickle.dumps(action), timeout=1)
+        response = self.session.post(f'{self.base_url}/gym-to-halite', data=pickle.dumps(action), timeout=10)
         assert response.status_code == requests.codes.ok
 
-    def receive_state(self, timeout=2):
+    def receive_state(self, timeout=10):
         response = self.session.get(f'{self.base_url}/halite-to-gym', timeout=timeout)
         assert response.status_code == requests.codes.ok
         return pickle.loads(response.content)
 
     def reset(self):
-        response = self.session.get(f'{self.base_url}/reset', timeout=1)
+        response = self.session.get(f'{self.base_url}/reset', timeout=10)
         assert response.status_code == requests.codes.ok
 
     def kill(self):
@@ -68,6 +68,8 @@ class HaliteEnv(gym.Env):
 
         self.turn = 0
         self.last_map = None
+
+        self.previous_map = None
 
     def reset(self):
         #print(f'{dt.datetime.now()}: reset')
@@ -174,7 +176,7 @@ class HaliteEnv(gym.Env):
             width += 1
         height = int(width * 2/3)
         command += ['--timeout', '--dimensions', f'{width} {height}']
-        command += ['python3 MyQLearningBot.py', 'python3 TSCommander.py']
-        if random.randint(0, 1):
-            command += ['python3 TSCommander.py', 'python3 TSCommander.py']
+        command += ['python3 MyQLearningBot.py', 'python3 TSCaptain.py']
+        #if random.randint(0, 1):
+        #    command += ['python3 TSCommander.py', 'python3 TSCommander.py']
         return command
