@@ -14,6 +14,8 @@ import dqn.env
 import dqn.graph
 import dqn.play
 
+import sys
+
 from baselines.deepq.experiments import train_cartpole
 
 
@@ -23,6 +25,10 @@ def model(inpt, num_actions, scope, reuse=False):
     import tensorflow.contrib.layers as layers
     with tf.variable_scope(scope, reuse=reuse):
         out = inpt
+        out = layers.fully_connected(out, num_outputs=256, activation_fn=tf.nn.tanh)
+        out = layers.fully_connected(out, num_outputs=192, activation_fn=tf.nn.tanh)
+        out = layers.fully_connected(out, num_outputs=128, activation_fn=tf.nn.tanh)
+        out = layers.fully_connected(out, num_outputs=96, activation_fn=tf.nn.tanh)
         out = layers.fully_connected(out, num_outputs=64, activation_fn=tf.nn.tanh)
         out = layers.fully_connected(out, num_outputs=num_actions, activation_fn=tf.nn.tanh)
         out = layers.softmax(out)
@@ -30,7 +36,6 @@ def model(inpt, num_actions, scope, reuse=False):
 
 
 def main():
-    print('main')
     stats_file = pathlib.Path('stats.csv')
     if stats_file.exists():
         stats_file.unlink()
@@ -53,17 +58,27 @@ def main():
             optimizer=tf.train.AdamOptimizer(learning_rate=5e-4),
         )
 
+        # Load an existing model or start from new
+        #act = None
+        #new_model_text = input("Enter 'new' for a new model, Enter 'existing' for an existing model\n")
+        #if new_model_text.strip().upper() == 'NEW':
+        #    print('Here')
         act = dqn.play.ActWrapper(act, {
             'make_obs_ph': make_obs_ph,
             'q_func': model,
             'num_actions': env.action_space.n,
         })
+        #elif new_model_text.strip().upper() == 'EXISTING':
+        #    act = dqn.play.ActWrapper.load('dqn_model.pkl')
+        #else:
+        #    print('Invalid Input -- Existing')
+        #    sys.exit(1)
 
         # Create the replay buffer
         replay_buffer = ReplayBuffer(50000)
         # Create the schedule for exploration starting from 1 (every action is random) down to
         # 0.02 (98% of actions are selected according to values predicted by the model).
-        exploration = LinearSchedule(schedule_timesteps=30000, initial_p=1.0, final_p=0.03)
+        exploration = LinearSchedule(schedule_timesteps=50000, initial_p=1.0, final_p=0.03)
 
         # Initialize the parameters and copy them to the target network.
         U.initialize()
@@ -77,18 +92,31 @@ def main():
         current_time = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
         train_log_dir = 'logs/' + current_time
         train_summary_writer = tf.summary.FileWriter(train_log_dir)
+
         tb_win_rate = tf.Variable(0, dtype=tf.float32)
         tb_steps = tf.Variable(0, dtype=tf.float32)
         tb_planet_count = tf.Variable(0, dtype=tf.float32)
         tb_mean_reward = tf.Variable(0, dtype=tf.float32)
+        tb_commander_win_rate = tf.Variable(0, dtype=tf.float32)
+        tb_captain_win_rate = tf.Variable(0, dtype=tf.float32)
+        tb_admiral_win_rate = tf.Variable(0, dtype=tf.float32)
+
         tb_exploration_rate = tf.Variable(0, dtype=tf.float32)
+
         tb_win_rate_scalar = tf.summary.scalar('Mean_Win_Rate', tb_win_rate)
         tb_steps_scalar = tf.summary.scalar('Turns', tb_steps)
         tb_planet_count_scalar = tf.summary.scalar('Planet_Count', tb_planet_count)
         tb_mean_reward_scalar = tf.summary.scalar('Mean_100_Episode_Reward', tb_mean_reward)
+        tb_commander_win_rate_scalar = tf.summary.scalar('Commander Win Rate', tb_commander_win_rate)
+        tb_captain_win_rate_scalar = tf.summary.scalar('Captain Win Rate', tb_captain_win_rate)
+        tb_admiral_win_rate_scalar = tf.summary.scalar('Admiral Win Rate', tb_admiral_win_rate)
         tb_exploration_rate_scalar = tf.summary.scalar('Exploration_Rate %', tb_exploration_rate)
+
         session = tf.Session()
 
+        wins_commander = [False]
+        wins_captain = [False]
+        wins_admiral = [False]
         episode_rewards = [0.0]
         wins = [False]
         saved_mean_reward = None
@@ -108,8 +136,16 @@ def main():
                 obs = env.reset()
                 episode_rewards.append(0)
                 wins.append(info['win'])
-
+                if info['bot'] == 'Commander':
+                    wins_commander.append(info['win'])
+                elif info['bot'] == 'Captain':
+                    wins_captain.append(info['win'])
+                elif info['bot'] == 'Admiral':
+                    wins_admiral.append(info['win'])
             win_rate = round(np.mean(wins[-100:]), 4)
+            commander_win_rate = round(np.mean(wins_commander[-100:]), 4)
+            captain_win_rate = round(np.mean(wins_captain[-100:]), 4)
+            admiral_win_rate = round(np.mean(wins_admiral[-100:]), 4)
             is_solved = t > 100 and win_rate >= 1.0
             if is_solved:
                 print('Solved')
@@ -129,11 +165,19 @@ def main():
             exploration_rate = int(100 * exploration.value(t))
 
             if done:
+                # TODO Actually fix this bug
+                # Continues if the number of turns is 1
+                if info['turns'] == 1:
+                    print('Invalid Turn')
+
                 info = {
                     'date': str(dt.datetime.now()),
                     'episode': len(episode_rewards),
                     **info,
                     'win_rate': win_rate,
+                    'commander_win_rate': commander_win_rate,
+                    'captain_win_rate': captain_win_rate,
+                    'admiral_win_rate': admiral_win_rate,
                     'mean_100ep_reward': mean_100ep_reward,
                     'exploration_rate': exploration_rate,
                 }
@@ -147,11 +191,17 @@ def main():
                 # Log to tensorboard
                 #with train_summary_writer
                 session.run(tb_win_rate.assign(info['win_rate']))
+                session.run(tb_commander_win_rate.assign(info['commander_win_rate']))
+                session.run(tb_captain_win_rate.assign(info['captain_win_rate']))
+                session.run(tb_admiral_win_rate.assign(info['admiral_win_rate']))
                 session.run(tb_steps.assign(info['turns']))
                 session.run(tb_planet_count.assign(info['highest_planet_count']))
                 session.run(tb_mean_reward.assign(info['mean_100ep_reward']))
                 session.run(tb_exploration_rate.assign(info['exploration_rate']))
                 train_summary_writer.add_summary(session.run(tb_win_rate_scalar), str(info['episode']))
+                train_summary_writer.add_summary(session.run(tb_commander_win_rate_scalar), str(info['episode']))
+                train_summary_writer.add_summary(session.run(tb_captain_win_rate_scalar), str(info['episode']))
+                train_summary_writer.add_summary(session.run(tb_admiral_win_rate_scalar), str(info['episode']))
                 train_summary_writer.add_summary(session.run(tb_steps_scalar), str(info['episode']))
                 train_summary_writer.add_summary(session.run(tb_planet_count_scalar), str(info['episode']))
                 train_summary_writer.add_summary(session.run(tb_mean_reward_scalar), str(info['episode']))

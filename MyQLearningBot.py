@@ -14,11 +14,11 @@ class Broker:
         self.base_url = base_url
 
     def send_state(self, state):
-        response = requests.post(f'{self.base_url}/halite-to-gym', data=pickle.dumps(state), timeout=10)
+        response = requests.post(f'{self.base_url}/halite-to-gym', data=pickle.dumps(state), timeout=20)
         assert response.status_code == requests.codes.ok
 
     def receive_action(self):
-        response = requests.get(f'{self.base_url}/gym-to-halite', timeout=10)
+        response = requests.get(f'{self.base_url}/gym-to-halite', timeout=20)
         assert response.status_code == requests.codes.ok
         return pickle.loads(response.content)
 
@@ -61,6 +61,11 @@ class QLearningBot(dqn.bot.Bot):
 
 
 def main():
+    import os
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    import tensorflow as tf
+    tf.get_logger().setLevel('ERROR')
+
     try:
         broker = Broker(base_url='http://localhost:5000')
         bot = QLearningBot('QLearningBot', broker)

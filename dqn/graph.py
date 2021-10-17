@@ -68,11 +68,12 @@ The functions in this file can are used to create the following functions:
     Q' is set to Q once every 10000 updates training steps.
 
 """
+from pickle import TRUE
 import tensorflow as tf
 import dqn.tf_util as U
 
 
-def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
+def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=True):
     """Creates the act function:
 
     Parameters
@@ -102,7 +103,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         function to select and action given observation.
 `       See the top of the file for details.
     """
-    with tf.variable_scope(scope, reuse=reuse):
+    with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         observations_ph = U.ensure_tf_input(make_obs_ph("observation"))
         stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic")
         update_eps_ph = tf.placeholder(tf.float32, (), name="update_eps")

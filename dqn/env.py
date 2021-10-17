@@ -5,6 +5,9 @@ import subprocess
 import datetime as dt
 import multiprocessing
 
+import time
+import itertools
+
 import requests
 import requests.adapters
 import numpy as np
@@ -30,16 +33,16 @@ class Broker:
         return response.content.decode()
 
     def send_action(self, action):
-        response = self.session.post(f'{self.base_url}/gym-to-halite', data=pickle.dumps(action), timeout=10)
+        response = self.session.post(f'{self.base_url}/gym-to-halite', data=pickle.dumps(action), timeout=20)
         assert response.status_code == requests.codes.ok
 
-    def receive_state(self, timeout=10):
+    def receive_state(self, timeout=20):
         response = self.session.get(f'{self.base_url}/halite-to-gym', timeout=timeout)
         assert response.status_code == requests.codes.ok
         return pickle.loads(response.content)
 
     def reset(self):
-        response = self.session.get(f'{self.base_url}/reset', timeout=10)
+        response = self.session.get(f'{self.base_url}/reset', timeout=20)
         assert response.status_code == requests.codes.ok
 
     def kill(self):
@@ -106,9 +109,23 @@ class HaliteEnv(gym.Env):
         assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
         self.turn += 1
 
+        # Read the Halite output log
+
         try:
             self.broker.send_action(action)
-            self.state, map = self.broker.receive_state(timeout=10)
+            time.sleep(0.1)
+            try_receive = True
+            position = -1
+            with open('stdout-halite.log') as halite_file:
+                lines = halite_file.readlines()
+                if 'Turn' not in lines[-1]:
+                    for line in lines:
+                        if 'QLearningBot,' in line:
+                            sub = line.split('#')[2]
+                            position = int(sub[0])
+                            try_receive = False
+                            raise requests.ReadTimeout
+            self.state, map = self.broker.receive_state(timeout=20)
         except (requests.ReadTimeout, requests.ConnectionError):
             me = self.previous_map.get_me()
             players = self.previous_map.all_players()
@@ -117,17 +134,28 @@ class HaliteEnv(gym.Env):
 
             win = False
             reward = -1
-            if my_ships_count > enemy_ships_count:
-                win = True
+            # Caught a win
+            if position == 1:
                 reward = 1
-
+                win = True
+            # Caught a loss
+            elif position == 2:
+                reward = -1
+                win = False
+            # Couldn't catch end state
+            elif position == -1:
+                if my_ships_count > enemy_ships_count:
+                    win = True
+                    reward = 1
             info = {
+                'bot': self.bot,
                 'win': win,
                 'turns': self.turn,
                 #'my_ships': my_ships_count,
                 #'enemy_ships': enemy_ships_count,
                 'highest_planet_count': self.highest_planet_count,
             }
+
             self.total_reward += reward
             return self.state, reward, True, info
 
@@ -136,15 +164,30 @@ class HaliteEnv(gym.Env):
         players = map.all_players()
         my_planets_count = len([planet for planet in map.all_planets() if planet.owner == me])
         my_ships = me.all_ships()
+        enemy_ships_count = sum(len(player.all_ships()) for player in players if player != me)
 
-        reward = -.0005
+        reward = 0.
+        reward_decay = -.005
         if my_planets_count > self.highest_planet_count:
             self.highest_planet_count = my_planets_count
             reward = .001
 
-        self.total_reward += reward
+        # Planet Count
+        #my_planet_radii = np.array([planet.radius for planet in map.all_planets() if planet.owner == me])
+        #my_planet_rewards = np.sum(np.pi * (my_planet_radii * my_planet_radii))
+        #enemy_planet_radii = np.array([planet.radius for planet in map.all_planets() if (planet.owner != me and planet.owner != None)])
+        #enemy_planet_rewards = np.sum(np.pi * (enemy_planet_radii * enemy_planet_radii))
+        #reward += 0.0005 * (my_planet_rewards - enemy_planet_rewards)
+
+        # Ship Health Count
+        #my_ship_total_health = np.sum([ship.health for ship in me.all_ships()])
+        #enemy_ships = [player.all_ships() for player in players if player != me]
+        #enemy_ships = list(itertools.chain.from_iterable(enemy_ships))
+        #enemy_ship_total_health = np.sum(ship.health for ship in enemy_ships)
+        #reward += 0.0002 * (my_ship_total_health - enemy_ship_total_health)
+
+        self.total_reward = reward + reward_decay
         self.previous_map = map
-        enemy_ships_count = sum(len(player.all_ships()) for player in players if player != me)
         info = {
             'turn': self.turn,
             'reward': reward,
@@ -176,7 +219,21 @@ class HaliteEnv(gym.Env):
             width += 1
         height = int(width * 2/3)
         command += ['--timeout', '--dimensions', f'{width} {height}']
-        command += ['python3 MyQLearningBot.py', 'python3 TSCaptain.py']
+
+        # 33% chance basic bot
+        # 33% chance intermediate bot
+        # 33% chance advanced bot
+        bot_choice = random.randint(0, 2)
+        if bot_choice == 0:
+            self.bot = 'Commander'
+            command += ['python3 MyQLearningBot.py', 'python3 TSCommander.py']
+        elif bot_choice == 1:
+            self.bot = 'Captain'
+            command += ['python3 MyQLearningBot.py', 'python3 TSCaptain.py']
+        else:
+            self.bot = 'Admiral'
+            command += ['python3 MyQLearningBot.py', 'python3 TSAdmiral.py']
+
         #if random.randint(0, 1):
         #    command += ['python3 TSCommander.py', 'python3 TSCommander.py']
         return command
