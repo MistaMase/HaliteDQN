@@ -130,7 +130,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=True):
         return act
 
 
-def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0, double_q=True, scope="deepq", reuse=None):
+def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0, double_q=True, dueling=True, scope="deepq", reuse=None):
     """Creates the train function:
 
     Parameters

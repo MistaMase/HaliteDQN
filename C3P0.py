@@ -23,7 +23,7 @@ import random
 
 # GAME START
 # Here we define the bot's name as Settler and initialize the game, including communication with the Halite engine.
-game = hlt.Game("R2D2")
+game = hlt.Game("NN")
 
 initialized = False
 first_dock = False

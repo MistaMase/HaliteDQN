@@ -19,20 +19,37 @@ import sys
 from baselines.deepq.experiments import train_cartpole
 
 
-def model(inpt, num_actions, scope, reuse=False):
+def model(inpt, num_actions, scope, reuse=False, dueling=True):
     """This model takes as input an observation and returns values of all actions."""
     import tensorflow as tf  # need to keep imports here for serialization to work
     import tensorflow.contrib.layers as layers
     with tf.variable_scope(scope, reuse=reuse):
-        out = inpt
-        out = layers.fully_connected(out, num_outputs=256, activation_fn=tf.nn.tanh)
-        out = layers.fully_connected(out, num_outputs=192, activation_fn=tf.nn.tanh)
-        out = layers.fully_connected(out, num_outputs=128, activation_fn=tf.nn.tanh)
-        out = layers.fully_connected(out, num_outputs=96, activation_fn=tf.nn.tanh)
-        out = layers.fully_connected(out, num_outputs=64, activation_fn=tf.nn.tanh)
-        out = layers.fully_connected(out, num_outputs=num_actions, activation_fn=tf.nn.tanh)
-        out = layers.softmax(out)
-        return out
+        action_out = inpt
+        action_out = layers.fully_connected(action_out, num_outputs=256, activation_fn=tf.nn.tanh)
+        action_out = layers.fully_connected(action_out, num_outputs=192, activation_fn=tf.nn.tanh)
+        action_out = layers.fully_connected(action_out, num_outputs=128, activation_fn=tf.nn.tanh)
+        action_out = layers.fully_connected(action_out, num_outputs=96, activation_fn=tf.nn.tanh)
+        action_out = layers.fully_connected(action_out, num_outputs=64, activation_fn=tf.nn.tanh)
+        action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=tf.nn.tanh)
+        print("Num Actions")
+        print(num_actions)
+        #out = layers.softmax(out)
+
+        if dueling:
+            state_out = inpt
+            state_out = layers.fully_connected(state_out, num_outputs=256, activation_fn=tf.nn.tanh)
+            state_out = layers.fully_connected(state_out, num_outputs=192, activation_fn=tf.nn.tanh)
+            state_out = layers.fully_connected(state_out, num_outputs=128, activation_fn=tf.nn.tanh)
+            state_out = layers.fully_connected(state_out, num_outputs=96, activation_fn=tf.nn.tanh)
+            state_out = layers.fully_connected(state_out, num_outputs=64, activation_fn=tf.nn.tanh)
+            state_out = layers.fully_connected(state_out, num_outputs=1, activation_fn=tf.nn.tanh)
+            action_scores_mean = tf.reduce_mean(action_scores, 1)
+            action_scores_centered = action_scores - tf.expand_dims(action_scores_mean, 1)
+            q_out = state_out + action_scores_centered
+        else:
+            q_out = action_scores
+
+        return q_out
 
 
 def main():
@@ -55,7 +72,7 @@ def main():
             make_obs_ph=make_obs_ph,
             q_func=model,
             num_actions=env.action_space.n,
-            optimizer=tf.train.AdamOptimizer(learning_rate=5e-4),
+            optimizer=tf.train.AdamOptimizer(learning_rate=8e-3),
         )
 
         # Load an existing model or start from new
